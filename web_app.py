@@ -1,49 +1,70 @@
 import os
 import streamlit as st
-from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
-from openai import OpenAI
-from pinecone import Pinecone, PodSpec
+from dotenv import load_dotenv
+from pinecone import Pinecone, ServerlessSpec
+import openai
 
 
 load_dotenv()
-openrouter_key = os.getenv("OPENROUTER_API_KEY")
+openai.api_key = os.getenv("OPENROUTER_API_KEY")
 pinecone_key = os.getenv("PINECONE_API_KEY")
-index_name = os.getenv("PINECONE_INDEX_NAME")
-region = os.getenv("PINECONE_REGION")
+pinecone_index_name = os.getenv("PINECONE_INDEX_NAME")
+pinecone_region = os.getenv("PINECONE_REGION")
 
 
 pc = Pinecone(api_key=pinecone_key)
-index = pc.Index(index_name)
+index = pc.Index(
+    name=pinecone_index_name,
+    spec=ServerlessSpec(cloud="aws", region=pinecone_region)
+)
 
 
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-client_ai = OpenAI(api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
+st.set_page_config(page_title="Relationship AI Bot")
+st.title(" Relationship Advice AI")
+st.write("Ask me anything about relationships. I'm here to help!")
 
 
-st.title(" Relationship Advice Chatbot")
-user_query = st.text_input("Ask your relationship question:")
+user_question = st.text_input("Your question:", placeholder="e.g., How do I fix communication in a long-distance relationship?")
 
-if user_query:
-    with st.spinner("Thinking..."):
-        query_vector = embedder.encode(user_query).tolist()
-        results = index.query(vector=query_vector, top_k=5, include_metadata=True)
 
-        chunks = [match["metadata"]["text"] for match in results["matches"]]
-        context = "\n\n".join(chunks)
+if st.button("Get Advice") and user_question:
+   
+    user_embedding = embed_model.encode(user_question).tolist()
 
-        system_prompt = "You are a helpful relationship advisor. Use the insights from expert books:\n\n" + context
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
+   
+    search_results = index.query(
+        vector=user_embedding,
+        top_k=5,
+        include_metadata=True
+    )
+
+    
+    context_chunks = [match["metadata"]["text"] for match in search_results["matches"] if "text" in match["metadata"]]
+    context_text = "\n".join(context_chunks)
+
+   
+    prompt = f"""You are an AI trained to give advice on relationships.
+
+Context:
+{context_text}
+
+Question: {user_question}
+Answer:"""
+
+  
+    response = openai.ChatCompletion.create(
+        model="deepseek-chat",
+        messages=[
+            {"role": "system", "content": "You are a helpful relationship advisor."},
+            {"role": "user", "content": prompt}
         ]
+    )
 
-        response = client_ai.chat.completions.create(
-            model="deepseek/deepseek-chat:free",
-            messages=messages
-        )
-
-        st.markdown("Advice:")
-        st.write(response.choices[0].message.content.strip())
+   
+    ai_answer = response['choices'][0]['message']['content']
+    st.markdown("### 💡 Advice")
+    st.write(ai_answer)
