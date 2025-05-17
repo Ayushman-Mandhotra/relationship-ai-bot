@@ -1,33 +1,37 @@
 import os
-import chromadb
-from sentence_transformers import SentenceTransformer
 import streamlit as st
-from openai import OpenAI
 from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+from openai import OpenAI
+from pinecone import Pinecone, PodSpec
 
 
 load_dotenv()
-api_key = os.getenv("OPENROUTER_API_KEY")
+openrouter_key = os.getenv("OPENROUTER_API_KEY")
+pinecone_key = os.getenv("PINECONE_API_KEY")
+index_name = os.getenv("PINECONE_INDEX_NAME")
+region = os.getenv("PINECONE_REGION")
 
 
-client_ai = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
-
-
-client = chromadb.PersistentClient(path="embeddings")
-collection = client.get_or_create_collection("relationship_advice")
+pc = Pinecone(api_key=pinecone_key)
+index = pc.Index(index_name)
 
 
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-st.title("Relationship Advice Chatbot")
+client_ai = OpenAI(api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
+
+
+st.title(" Relationship Advice Chatbot")
 user_query = st.text_input("Ask your relationship question:")
 
 if user_query:
     with st.spinner("Thinking..."):
         query_vector = embedder.encode(user_query).tolist()
-        results = collection.query(query_embeddings=[query_vector], n_results=5)
-        chunks = results["documents"][0]
+        results = index.query(vector=query_vector, top_k=5, include_metadata=True)
+
+        chunks = [match["metadata"]["text"] for match in results["matches"]]
         context = "\n\n".join(chunks)
 
         system_prompt = "You are a helpful relationship advisor. Use the insights from expert books:\n\n" + context
