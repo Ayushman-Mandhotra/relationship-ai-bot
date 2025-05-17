@@ -3,9 +3,14 @@ import json
 import requests
 import chromadb
 from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
 
 
-api_key = "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"  
+load_dotenv()
+api_key = os.getenv("OPENROUTER_API_KEY")
+
+if not api_key:
+    raise ValueError("API key not found. Make sure it's in the .env file as OPENROUTER_API_KEY.")
 
 
 client = chromadb.PersistentClient(path="embeddings")
@@ -41,13 +46,14 @@ data = {
     ]
 }
 
+
 response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
 
 
 if response.status_code == 200:
     reply = response.json()['choices'][0]['message']['content']
-    print("\n Advice:")
+    print("\nAdvice:")
     print(reply.strip())
 else:
-    print(" Error:", response.status_code)
+    print("Error:", response.status_code)
     print(response.text)
